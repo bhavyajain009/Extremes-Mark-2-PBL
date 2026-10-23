@@ -1,5 +1,6 @@
 package com.extremis.dao;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -12,35 +13,397 @@ import java.sql.Statement;
 import java.time.LocalDate;
 
 /**
- * SQLite Database Connection and Schema Initializer.
+ * Universal Database Connection and Schema Initializer supporting:
+ * - SQLite (default for local development: extremis.db)
+ * - PostgreSQL (Aiven / Cloud deployment via DATABASE_URL or DB_HOST)
  */
 public class DBConnection {
 
-    private static final String DB_URL = "jdbc:sqlite:extremis.db";
+    private static volatile String activeJdbcUrl = null;
+    private static volatile String dbUser = null;
+    private static volatile String dbPassword = null;
+    private static volatile boolean isPostgres = false;
+    private static volatile boolean schemaInitialized = false;
 
     static {
         try {
-            Class.forName("org.sqlite.JDBC");
+            configureDatabase();
             initSchema();
-        } catch (ClassNotFoundException e) {
-            throw new RuntimeException("SQLite JDBC driver not found", e);
+        } catch (Exception e) {
+            System.err.println("DBConnection static init warning: " + e.getMessage());
         }
     }
 
     public static void main(String[] args) {
         initSchema();
-        System.out.println("SCHEMA_INITIALIZED_SUCCESS");
+        System.out.println("SCHEMA_INITIALIZED_SUCCESS (isPostgres=" + isPostgres + ")");
+    }
+
+    public static synchronized void configureDatabase() {
+        String envDbUrl = System.getenv("DATABASE_URL");
+        if (envDbUrl == null || envDbUrl.trim().isEmpty()) {
+            envDbUrl = System.getenv("JDBC_DATABASE_URL");
+        }
+        if (envDbUrl == null || envDbUrl.trim().isEmpty()) {
+            envDbUrl = System.getenv("DB_URL");
+        }
+        if (envDbUrl == null || envDbUrl.trim().isEmpty()) {
+            envDbUrl = System.getProperty("db.url");
+        }
+
+        String envHost = System.getenv("DB_HOST");
+        if (envHost == null || envHost.trim().isEmpty()) {
+            envHost = System.getProperty("db.host");
+        }
+
+        if (envDbUrl != null && !envDbUrl.trim().isEmpty()) {
+            envDbUrl = envDbUrl.trim();
+            if (envDbUrl.startsWith("postgres://") || envDbUrl.startsWith("postgresql://")) {
+                try {
+                    URI uri = new URI(envDbUrl);
+                    String host = uri.getHost();
+                    int port = uri.getPort() > 0 ? uri.getPort() : 5432;
+                    String path = uri.getPath();
+                    String dbName = (path != null && path.length() > 1) ? path.substring(1) : "defaultdb";
+                    String query = uri.getQuery();
+
+                    String userInfo = uri.getUserInfo();
+                    if (userInfo != null && !userInfo.isEmpty()) {
+                        String[] parts = userInfo.split(":", 2);
+                        dbUser = parts[0];
+                        if (parts.length > 1) {
+                            dbPassword = parts[1];
+                        }
+                    }
+
+                    activeJdbcUrl = "jdbc:postgresql://" + host + ":" + port + "/" + dbName +
+                            (query != null && !query.isEmpty() ? "?" + query : "?sslmode=require");
+                    isPostgres = true;
+                } catch (Exception e) {
+                    activeJdbcUrl = envDbUrl.replaceFirst("^(postgres|postgresql)://", "jdbc:postgresql://");
+                    isPostgres = true;
+                }
+            } else if (envDbUrl.startsWith("jdbc:postgresql:")) {
+                activeJdbcUrl = envDbUrl;
+                isPostgres = true;
+            } else {
+                activeJdbcUrl = envDbUrl;
+                isPostgres = envDbUrl.toLowerCase().contains("postgres");
+            }
+        } else if (envHost != null && !envHost.trim().isEmpty()) {
+            String port = System.getenv("DB_PORT");
+            if (port == null || port.isEmpty()) port = "21581";
+            String dbName = System.getenv("DB_NAME");
+            if (dbName == null || dbName.isEmpty()) dbName = "defaultdb";
+            String ssl = System.getenv("DB_SSLMODE");
+            if (ssl == null || ssl.isEmpty()) ssl = "require";
+            activeJdbcUrl = "jdbc:postgresql://" + envHost.trim() + ":" + port.trim() + "/" + dbName.trim() + "?sslmode=" + ssl.trim();
+            isPostgres = true;
+        }
+
+        if (isPostgres) {
+            if (dbUser == null) {
+                dbUser = System.getenv("DB_USER");
+                if (dbUser == null) dbUser = System.getProperty("db.user");
+            }
+            if (dbPassword == null) {
+                dbPassword = System.getenv("DB_PASSWORD");
+                if (dbPassword == null) dbPassword = System.getProperty("db.password");
+            }
+            try {
+                Class.forName("org.postgresql.Driver");
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException("PostgreSQL JDBC driver not found", e);
+            }
+        } else {
+            activeJdbcUrl = "jdbc:sqlite:extremis.db";
+            try {
+                Class.forName("org.sqlite.JDBC");
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException("SQLite JDBC driver not found", e);
+            }
+        }
+    }
+
+    public static synchronized void setDatabaseUrl(String url, String user, String pass) {
+        activeJdbcUrl = url;
+        dbUser = user;
+        dbPassword = pass;
+        isPostgres = url != null && url.toLowerCase().contains("postgres");
+        schemaInitialized = false;
+        try {
+            if (isPostgres) Class.forName("org.postgresql.Driver");
+            else Class.forName("org.sqlite.JDBC");
+        } catch (Exception ignored) {}
     }
 
     public static Connection getConnection() throws SQLException {
-        return DriverManager.getConnection(DB_URL);
+        if (activeJdbcUrl == null) {
+            configureDatabase();
+        }
+        if (isPostgres && dbUser != null && dbPassword != null) {
+            return DriverManager.getConnection(activeJdbcUrl, dbUser, dbPassword);
+        }
+        return DriverManager.getConnection(activeJdbcUrl);
     }
 
-    /**
-     * Initializes database tables and seed data if not already present.
-     */
     public static synchronized void initSchema() {
-        try (Connection conn = getConnection(); Statement stmt = conn.createStatement()) {
+        if (activeJdbcUrl == null) {
+            configureDatabase();
+        }
+        try (Connection conn = getConnection()) {
+            if (isPostgres) {
+                initPostgresSchema(conn);
+            } else {
+                initSqliteSchema(conn);
+            }
+            schemaInitialized = true;
+        } catch (SQLException e) {
+            System.err.println("initSchema notice: " + e.getMessage());
+        }
+    }
+
+    private static void initPostgresSchema(Connection conn) throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
+            // 0. Compatibility functions for datetime
+            try {
+                stmt.execute("CREATE OR REPLACE FUNCTION datetime(t text DEFAULT 'now') RETURNS timestamp AS $$\n" +
+                        "BEGIN\n" +
+                        "    IF t IS NULL OR t = 'now' THEN\n" +
+                        "        RETURN CURRENT_TIMESTAMP;\n" +
+                        "    ELSE\n" +
+                        "        RETURN t::timestamp;\n" +
+                        "    END IF;\n" +
+                        "EXCEPTION WHEN OTHERS THEN\n" +
+                        "    RETURN CURRENT_TIMESTAMP;\n" +
+                        "END;\n" +
+                        "$$ LANGUAGE plpgsql;");
+
+                stmt.execute("CREATE OR REPLACE FUNCTION datetime(t text, modifier text) RETURNS timestamp AS $$\n" +
+                        "BEGIN\n" +
+                        "    IF t = 'now' AND modifier = '-2 days' THEN\n" +
+                        "        RETURN CURRENT_TIMESTAMP - INTERVAL '2 days';\n" +
+                        "    ELSIF t = 'now' THEN\n" +
+                        "        RETURN CURRENT_TIMESTAMP;\n" +
+                        "    ELSE\n" +
+                        "        RETURN t::timestamp;\n" +
+                        "    END IF;\n" +
+                        "EXCEPTION WHEN OTHERS THEN\n" +
+                        "    RETURN CURRENT_TIMESTAMP;\n" +
+                        "END;\n" +
+                        "$$ LANGUAGE plpgsql;");
+            } catch (SQLException ignored) {}
+
+            // 1. Students Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS students (" +
+                    "id SERIAL PRIMARY KEY, " +
+                    "roll_no VARCHAR(100) UNIQUE NOT NULL, " +
+                    "name VARCHAR(255) NOT NULL, " +
+                    "email VARCHAR(255) NOT NULL, " +
+                    "branch VARCHAR(100) NOT NULL, " +
+                    "section VARCHAR(100) NOT NULL, " +
+                    "password_hash VARCHAR(255) NOT NULL, " +
+                    "session_token TEXT, " +
+                    "permissions_accepted INTEGER DEFAULT 0, " +
+                    "class_id INTEGER, " +
+                    "batch_id INTEGER)");
+
+            // 2. Attendance Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS attendance (" +
+                    "id SERIAL PRIMARY KEY, " +
+                    "student_id INTEGER NOT NULL, " +
+                    "date VARCHAR(50) NOT NULL, " +
+                    "check_in_time VARCHAR(50), " +
+                    "check_out_time VARCHAR(50), " +
+                    "checkin_lat DOUBLE PRECISION, " +
+                    "checkin_lng DOUBLE PRECISION, " +
+                    "checkin_accuracy DOUBLE PRECISION, " +
+                    "checkin_photo_path TEXT, " +
+                    "checkout_lat DOUBLE PRECISION, " +
+                    "checkout_lng DOUBLE PRECISION, " +
+                    "checkout_photo_path TEXT, " +
+                    "status VARCHAR(50) NOT NULL, " +
+                    "is_override INTEGER DEFAULT 0, " +
+                    "override_reason TEXT, " +
+                    "overridden_by VARCHAR(255), " +
+                    "UNIQUE(student_id, date))");
+
+            // 3. Notices Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS notices (" +
+                    "id SERIAL PRIMARY KEY, " +
+                    "category VARCHAR(100) NOT NULL, " +
+                    "title VARCHAR(255) NOT NULL, " +
+                    "message TEXT NOT NULL, " +
+                    "created_at VARCHAR(100) NOT NULL, " +
+                    "is_read INTEGER DEFAULT 0)");
+
+            // 4. Faculties Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS faculties (" +
+                    "id SERIAL PRIMARY KEY, " +
+                    "faculty_id VARCHAR(100) UNIQUE NOT NULL, " +
+                    "name VARCHAR(255) NOT NULL, " +
+                    "email VARCHAR(255) NOT NULL, " +
+                    "branch VARCHAR(100) NOT NULL, " +
+                    "section VARCHAR(100) NOT NULL, " +
+                    "password_hash VARCHAR(255) NOT NULL, " +
+                    "session_token TEXT, " +
+                    "is_active INTEGER DEFAULT 1, " +
+                    "department VARCHAR(100))");
+
+            // 5. Admins Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS admins (" +
+                    "id SERIAL PRIMARY KEY, " +
+                    "username VARCHAR(100) UNIQUE NOT NULL, " +
+                    "name VARCHAR(255) NOT NULL, " +
+                    "email VARCHAR(255) NOT NULL, " +
+                    "password_hash VARCHAR(255) NOT NULL, " +
+                    "session_token TEXT)");
+
+            // 6. Classes Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS classes (" +
+                    "id SERIAL PRIMARY KEY, " +
+                    "code VARCHAR(100) UNIQUE NOT NULL, " +
+                    "name VARCHAR(255) NOT NULL, " +
+                    "department VARCHAR(100) NOT NULL, " +
+                    "semester VARCHAR(100), " +
+                    "is_active INTEGER DEFAULT 1)");
+
+            // 7. Batches Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS batches (" +
+                    "id SERIAL PRIMARY KEY, " +
+                    "class_id INTEGER NOT NULL, " +
+                    "code VARCHAR(100) NOT NULL, " +
+                    "name VARCHAR(255) NOT NULL, " +
+                    "is_active INTEGER DEFAULT 1, " +
+                    "UNIQUE(class_id, code))");
+
+            // 8. Teacher Assignments Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS teacher_assignments (" +
+                    "id SERIAL PRIMARY KEY, " +
+                    "faculty_id INTEGER NOT NULL, " +
+                    "class_id INTEGER NOT NULL, " +
+                    "batch_id INTEGER, " +
+                    "subject VARCHAR(255), " +
+                    "created_at VARCHAR(100) NOT NULL)");
+
+            // 9. Attendance Overrides Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS attendance_overrides (" +
+                    "id SERIAL PRIMARY KEY, " +
+                    "attendance_id INTEGER, " +
+                    "student_id INTEGER NOT NULL, " +
+                    "faculty_id INTEGER NOT NULL, " +
+                    "original_status VARCHAR(50) NOT NULL, " +
+                    "updated_status VARCHAR(50) NOT NULL, " +
+                    "reason TEXT NOT NULL, " +
+                    "attendance_date VARCHAR(50) NOT NULL, " +
+                    "override_time VARCHAR(100) NOT NULL)");
+
+            // 10. Random Check-in Settings Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS random_checkin_settings (" +
+                    "id INTEGER PRIMARY KEY CHECK (id = 1), " +
+                    "is_enabled INTEGER DEFAULT 1, " +
+                    "is_paused INTEGER DEFAULT 0, " +
+                    "earliest_time VARCHAR(50) DEFAULT '09:15', " +
+                    "latest_time VARCHAR(50) DEFAULT '15:30', " +
+                    "duration_minutes INTEGER DEFAULT 10, " +
+                    "min_interval_minutes INTEGER DEFAULT 45, " +
+                    "max_interval_minutes INTEGER DEFAULT 90, " +
+                    "challenges_per_day INTEGER DEFAULT 2, " +
+                    "target_type VARCHAR(50) DEFAULT 'ALL', " +
+                    "target_value VARCHAR(50) DEFAULT 'ALL', " +
+                    "updated_at VARCHAR(100))");
+
+            stmt.execute("INSERT INTO random_checkin_settings " +
+                    "(id, is_enabled, is_paused, earliest_time, latest_time, duration_minutes, min_interval_minutes, max_interval_minutes, challenges_per_day, target_type, target_value, updated_at) " +
+                    "VALUES (1, 1, 0, '09:15', '15:30', 10, 45, 90, 2, 'ALL', 'ALL', '2026-10-23 00:00:00') " +
+                    "ON CONFLICT (id) DO NOTHING");
+
+            // 10b. Attendance Timer Settings Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS attendance_timer_settings (" +
+                    "id INTEGER PRIMARY KEY CHECK (id = 1), " +
+                    "checkin_timer_enabled INTEGER DEFAULT 1, " +
+                    "checkin_start_time VARCHAR(50) DEFAULT '08:50', " +
+                    "checkin_end_time VARCHAR(50) DEFAULT '09:05', " +
+                    "checkin_duration_minutes INTEGER DEFAULT 15, " +
+                    "checkout_timer_enabled INTEGER DEFAULT 1, " +
+                    "checkout_start_time VARCHAR(50) DEFAULT '15:40', " +
+                    "checkout_end_time VARCHAR(50) DEFAULT '18:00', " +
+                    "checkout_duration_minutes INTEGER DEFAULT 140, " +
+                    "updated_at VARCHAR(100))");
+
+            stmt.execute("INSERT INTO attendance_timer_settings " +
+                    "(id, checkin_timer_enabled, checkin_start_time, checkin_end_time, checkin_duration_minutes, " +
+                    "checkout_timer_enabled, checkout_start_time, checkout_end_time, checkout_duration_minutes, updated_at) " +
+                    "VALUES (1, 1, '08:50', '09:05', 15, 1, '15:40', '18:00', 140, '2026-10-23 00:00:00') " +
+                    "ON CONFLICT (id) DO NOTHING");
+
+            // 11. Random Challenges Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS random_challenges (" +
+                    "id SERIAL PRIMARY KEY, " +
+                    "challenge_code VARCHAR(100) UNIQUE NOT NULL, " +
+                    "scheduled_time VARCHAR(100) NOT NULL, " +
+                    "deadline_time VARCHAR(100) NOT NULL, " +
+                    "duration_minutes INTEGER NOT NULL, " +
+                    "status VARCHAR(50) NOT NULL, " +
+                    "target_type VARCHAR(50) NOT NULL, " +
+                    "target_value VARCHAR(50) NOT NULL, " +
+                    "is_manual INTEGER DEFAULT 0, " +
+                    "created_at VARCHAR(100) NOT NULL, " +
+                    "created_by VARCHAR(100) NOT NULL)");
+
+            // 12. Student Random Challenges Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS student_random_challenges (" +
+                    "id SERIAL PRIMARY KEY, " +
+                    "challenge_id INTEGER NOT NULL, " +
+                    "student_id INTEGER NOT NULL, " +
+                    "status VARCHAR(50) NOT NULL, " +
+                    "responded_at VARCHAR(100), " +
+                    "lat DOUBLE PRECISION, " +
+                    "lng DOUBLE PRECISION, " +
+                    "accuracy DOUBLE PRECISION, " +
+                    "photo_path TEXT, " +
+                    "UNIQUE(challenge_id, student_id))");
+
+            // 13. Random Location Checks Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS random_location_checks (" +
+                    "id SERIAL PRIMARY KEY, " +
+                    "student_id INTEGER NOT NULL, " +
+                    "attendance_id INTEGER, " +
+                    "check_date VARCHAR(50) NOT NULL, " +
+                    "scheduled_time VARCHAR(100) NOT NULL, " +
+                    "window_end_time VARCHAR(100) NOT NULL, " +
+                    "status VARCHAR(50) NOT NULL, " +
+                    "verification_result VARCHAR(100), " +
+                    "lat DOUBLE PRECISION, " +
+                    "lng DOUBLE PRECISION, " +
+                    "accuracy DOUBLE PRECISION, " +
+                    "distance_meters DOUBLE PRECISION, " +
+                    "server_timestamp VARCHAR(100), " +
+                    "client_timestamp VARCHAR(100), " +
+                    "failure_reason TEXT, " +
+                    "flagged_for_review INTEGER DEFAULT 0, " +
+                    "created_at VARCHAR(100) NOT NULL, " +
+                    "faculty_review_status VARCHAR(50), " +
+                    "faculty_review_notes TEXT, " +
+                    "faculty_reviewed_by VARCHAR(100), " +
+                    "faculty_reviewed_at VARCHAR(100))");
+
+            try { stmt.execute("CREATE INDEX IF NOT EXISTS idx_rlc_student_date ON random_location_checks(student_id, check_date)"); } catch (SQLException ignored) {}
+            try { stmt.execute("CREATE INDEX IF NOT EXISTS idx_rlc_status ON random_location_checks(status)"); } catch (SQLException ignored) {}
+        }
+
+        seedClassesAndBatches(conn);
+        seedStudents(conn);
+        cleanupDemoAccounts(conn);
+        seedFaculties(conn);
+        seedTeacherAssignments(conn);
+        seedAdmins(conn);
+        seedNotices(conn);
+        normalizeAndSeedHistoricalAttendance(conn);
+    }
+
+    private static void initSqliteSchema(Connection conn) throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
 
             // 1. Students Table
             stmt.execute("CREATE TABLE IF NOT EXISTS students (" +
@@ -312,7 +675,7 @@ public class DBConnection {
         // 2. Conducted dates in October 2026
         String[] dates = {"2026-10-01", "2026-10-02", "2026-10-03", "2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-10", "2026-10-12"};
 
-        String insertAtt = "INSERT OR IGNORE INTO attendance (student_id, date, check_in_time, check_out_time, checkin_lat, checkin_lng, checkin_accuracy, status, is_override, override_reason, overridden_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String insertAtt = "INSERT INTO attendance (student_id, date, check_in_time, check_out_time, checkin_lat, checkin_lng, checkin_accuracy, status, is_override, override_reason, overridden_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (student_id, date) DO NOTHING";
 
         try (PreparedStatement ps = conn.prepareStatement(insertAtt);
              Statement s = conn.createStatement();
@@ -337,10 +700,8 @@ public class DBConnection {
 
                     // Distribute statuses realistically
                     if (sId == 8L) {
-                        // Devendra: 50% critical shortage
                         status = (i % 2 == 0) ? "PRESENT" : "ABSENT";
                     } else if (sId == 6L) {
-                        // Rohan: 70% attendance (below 75% threshold)
                         if (i == 2 || i == 5 || i == 7) status = "ABSENT";
                         else if (i == 4) {
                             status = "PRESENT";
@@ -349,11 +710,9 @@ public class DBConnection {
                             by = "Dr. Rajesh Sharma (FAC001)";
                         } else status = "PRESENT";
                     } else if (sId == 7L) {
-                        // Sneha: 90% (1 excused)
                         if (i == 3) status = "EXCUSED";
                         else status = "PRESENT";
                     } else if (sId == 1L || sId == 2L) {
-                        // Bhavya: 90% Present, 10% Late on Oct 12
                         if (i == dates.length - 1) {
                             status = "LATE";
                             cin = "09:22:00";
@@ -362,7 +721,6 @@ public class DBConnection {
                             by = "Dr. Rajesh Sharma (FAC001)";
                         } else status = "PRESENT";
                     } else {
-                        // General pattern: 80% to 100%
                         if (hash % 10 == 0) {
                             status = "ABSENT";
                             cin = null;
@@ -402,7 +760,7 @@ public class DBConnection {
             if (rs.next() && rs.getInt(1) > 0) return;
         } catch (SQLException ignored) {}
 
-        String sql = "INSERT OR IGNORE INTO attendance_overrides (attendance_id, student_id, faculty_id, original_status, updated_status, reason, attendance_date, override_time) " +
+        String sql = "INSERT INTO attendance_overrides (attendance_id, student_id, faculty_id, original_status, updated_status, reason, attendance_date, override_time) " +
                      "VALUES (?, ?, 1, ?, ?, ?, ?, datetime('now', '-2 days'))";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setLong(1, 1L);
@@ -429,7 +787,7 @@ public class DBConnection {
             if (rs.next() && rs.getInt(1) > 0) return;
         }
 
-        String insertClass = "INSERT OR IGNORE INTO classes (code, name, department, semester, is_active) VALUES (?, ?, ?, ?, 1)";
+        String insertClass = "INSERT INTO classes (code, name, department, semester, is_active) VALUES (?, ?, ?, ?, 1) ON CONFLICT (code) DO NOTHING";
         try (PreparedStatement ps = conn.prepareStatement(insertClass)) {
             ps.setString(1, "AI-A");
             ps.setString(2, "Artificial Intelligence - Section A");
@@ -460,7 +818,7 @@ public class DBConnection {
             }
         }
 
-        String insertBatch = "INSERT OR IGNORE INTO batches (class_id, code, name, is_active) VALUES (?, ?, ?, 1)";
+        String insertBatch = "INSERT INTO batches (class_id, code, name, is_active) VALUES (?, ?, ?, 1) ON CONFLICT (class_id, code) DO NOTHING";
         try (PreparedStatement ps = conn.prepareStatement(insertBatch)) {
             if (aiClassId != null) {
                 ps.setLong(1, aiClassId);
@@ -559,7 +917,6 @@ public class DBConnection {
         String insertFac = "INSERT INTO faculties (faculty_id, name, email, branch, section, password_hash) VALUES (?, ?, ?, ?, ?, ?) " +
                 "ON CONFLICT(faculty_id) DO UPDATE SET password_hash = excluded.password_hash, name = excluded.name, is_active = 1";
         try (PreparedStatement ps = conn.prepareStatement(insertFac)) {
-            // Faculty 1: AI - Section A
             ps.setString(1, "FAC001");
             ps.setString(2, "Dr. Rajesh Sharma");
             ps.setString(3, "rajesh.sharma@aryacollege.edu.in");
@@ -568,7 +925,6 @@ public class DBConnection {
             ps.setString(6, facPassHash);
             ps.executeUpdate();
 
-            // Faculty 2: CS - Section A
             ps.setString(1, "FAC002");
             ps.setString(2, "Prof. Priya Verma");
             ps.setString(3, "priya.verma@aryacollege.edu.in");
@@ -577,7 +933,6 @@ public class DBConnection {
             ps.setString(6, facPassHash);
             ps.executeUpdate();
 
-            // Faculty 3: ECE - Section A
             ps.setString(1, "FAC003");
             ps.setString(2, "Dr. Amit Patel");
             ps.setString(3, "amit.patel@aryacollege.edu.in");
@@ -607,24 +962,12 @@ public class DBConnection {
                 "VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?) " +
                 "ON CONFLICT(roll_no) DO UPDATE SET password_hash = excluded.password_hash, permissions_accepted = 1, class_id = excluded.class_id, batch_id = excluded.batch_id";
 
-        // Exactly 1 Demo account + 5 Student accounts
         Object[][] students = {
-            // Demo Student: Bhavya Kumar Bohra (AI - Section A, Class 1, Batch 1)
             {"24EARAD031", "Bhavya Kumar Bohra", "bhavya.24earad031@aryacollege.edu.in", "AI", "Section A", 1L, 1L},
-
-            // Student 1: Aarav Sharma (AI - Section A, Class 1, Batch 1)
             {"24EARAD001", "Aarav Sharma", "aarav.24earad001@aryacollege.edu.in", "AI", "Section A", 1L, 1L},
-
-            // Student 2: Ananya Gupta (AI - Section A, Class 1, Batch 1)
             {"24EARAD002", "Ananya Gupta", "ananya.24earad002@aryacollege.edu.in", "AI", "Section A", 1L, 1L},
-
-            // Student 3: Ishan Verma (CS - Section A, Class 2, Batch 3)
             {"24ECS001", "Ishan Verma", "ishan.24ecs001@aryacollege.edu.in", "CS", "Section A", 2L, 3L},
-
-            // Student 4: Diya Joshi (CS - Section A, Class 2, Batch 3)
             {"24ECS002", "Diya Joshi", "diya.24ecs002@aryacollege.edu.in", "CS", "Section A", 2L, 3L},
-
-            // Student 5: Aditya Roy (ECE - Section A, Class 3, Batch 5)
             {"24ECE001", "Aditya Roy", "aditya.24ece001@aryacollege.edu.in", "ECE", "Section A", 3L, 5L}
         };
 
@@ -645,14 +988,11 @@ public class DBConnection {
 
     private static void cleanupDemoAccounts(Connection conn) {
         try (Statement stmt = conn.createStatement()) {
-            // Keep exactly Bhavya Kumar Bohra (24EARAD031) and the 5 configured student accounts
             stmt.executeUpdate("DELETE FROM students WHERE roll_no NOT IN (" +
                     "'24EARAD031', '24EARAD001', '24EARAD002', '24ECS001', '24ECS002', '24ECE001')");
 
-            // Clean up old temporary faculty accounts (TCH_TEST_...)
             stmt.executeUpdate("DELETE FROM faculties WHERE faculty_id LIKE 'TCH_TEST_%'");
 
-            // Ensure consistent class_id and batch_id for all students
             stmt.executeUpdate("UPDATE students SET class_id = 1, batch_id = 1 WHERE branch = 'AI'");
             stmt.executeUpdate("UPDATE students SET class_id = 2, batch_id = 3 WHERE branch = 'CS'");
             stmt.executeUpdate("UPDATE students SET class_id = 3, batch_id = 5 WHERE branch = 'ECE'");
@@ -663,7 +1003,6 @@ public class DBConnection {
     }
 
     private static void seedNotices(Connection conn) throws SQLException {
-        // Seed Notices matching Screen 2 mockup
         String insertNotice = "INSERT INTO notices (category, title, message, created_at, is_read) VALUES (?, ?, ?, ?, ?)";
         try (PreparedStatement ps = conn.prepareStatement(insertNotice)) {
             ps.setString(1, "IMPORTANT");
@@ -696,10 +1035,6 @@ public class DBConnection {
         }
     }
 
-
-    /**
-     * Utility to hash passwords using SHA-256.
-     */
     public static String hashPassword(String password) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
