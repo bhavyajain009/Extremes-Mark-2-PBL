@@ -33,7 +33,10 @@ public class AuthFilter implements Filter {
 
         // Allow static resources and public endpoints
         if (path.startsWith("/css/") || path.startsWith("/js/") || path.startsWith("/images/") ||
-            path.startsWith("/uploads/") || path.equals("/login") || path.equals("/logout")) {
+            path.startsWith("/icons/") || path.startsWith("/uploads/") ||
+            path.equals("/manifest.json") || path.equals("/sw.js") ||
+            path.equals("/login") || path.equals("/logout") ||
+            path.startsWith("/api/random-checkin/")) {
             chain.doFilter(req, res);
             return;
         }
@@ -67,7 +70,11 @@ public class AuthFilter implements Filter {
         Student student = (session != null) ? (Student) session.getAttribute("currentStudent") : null;
 
         if (student == null) {
-            response.sendRedirect(request.getContextPath() + "/login");
+            String redirectUrl = request.getContextPath() + "/login";
+            if (!path.isEmpty() && !"/".equals(path) && !"/dashboard".equals(path)) {
+                redirectUrl += "?redirect=" + java.net.URLEncoder.encode(path, java.nio.charset.StandardCharsets.UTF_8);
+            }
+            response.sendRedirect(redirectUrl);
             return;
         }
 

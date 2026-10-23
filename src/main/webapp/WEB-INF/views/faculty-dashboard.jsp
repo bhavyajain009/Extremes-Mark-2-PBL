@@ -60,6 +60,38 @@
             </div>
         </c:if>
 
+        <c:if test="${not empty sessionScope.flashSuccess}">
+            <div class="alert-banner alert-banner-success mb-16" id="sessionFlashSuccess">
+                <span><strong>Success:</strong> ${sessionScope.flashSuccess}</span>
+                <button type="button" onclick="document.getElementById('sessionFlashSuccess').style.display='none'" style="background:none;border:none;cursor:pointer;color:inherit;font-weight:700;">&times;</button>
+            </div>
+            <% session.removeAttribute("flashSuccess"); %>
+        </c:if>
+        <c:if test="${not empty sessionScope.flashError}">
+            <div class="alert-banner alert-banner-error mb-16" id="sessionFlashError">
+                <span><strong>Error:</strong> ${sessionScope.flashError}</span>
+                <button type="button" onclick="document.getElementById('sessionFlashError').style.display='none'" style="background:none;border:none;cursor:pointer;color:inherit;font-weight:700;">&times;</button>
+            </div>
+            <% session.removeAttribute("flashError"); %>
+        </c:if>
+
+        <c:if test="${locOutsideGeofence > 0}">
+            <div class="card mb-16" style="background: #FEF2F2; border: 2px solid #F87171; padding: 1rem 1.25rem; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+                <div class="flex items-center gap-12">
+                    <span style="font-size: 1.8rem;">🚨</span>
+                    <div>
+                        <h4 style="color: #991B1B; font-weight: 800; font-size: 1rem; margin: 0;">Attendance Verification Alert: ${locOutsideGeofence} Student(s) Detected Outside Campus</h4>
+                        <p style="color: #7F1D1D; font-size: 0.8rem; margin: 2px 0 0 0;">
+                            Random location check detected student(s) outside the 1000m college geofence. Please verify if they had an authorized reason (e.g. medical, approved college duty) or confirm their absence.
+                        </p>
+                    </div>
+                </div>
+                <button type="button" class="btn-primary-action" onclick="switchTab('location')" style="background: #DC2626; font-size: 0.82rem; font-weight: 800; padding: 8px 16px; border: none; border-radius: 8px; cursor: pointer; color: #FFFFFF;">
+                    Review Location Records Now &rarr;
+                </button>
+            </div>
+        </c:if>
+
         <!-- 1. Faculty Profile & Cohort Assignment Header Banner -->
         <div class="card mb-16" style="background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); color: #FFFFFF; padding: 1.25rem 1.5rem; border-radius: 14px;">
             <div class="flex-between" style="flex-wrap: wrap; gap: 1rem;">
@@ -249,6 +281,12 @@
             </button>
             <button type="button" class="tab-btn ${activeTab == 'reports' ? 'active' : ''}" onclick="switchTab('reports')">
                 &#x1F4D1; Attendance Reports & Overrides Log
+            </button>
+            <button type="button" class="tab-btn ${activeTab == 'location' ? 'active' : ''}" onclick="switchTab('location')" id="nav-location" style="${locOutsideGeofence > 0 ? 'border: 1.5px solid #EF4444; color: #DC2626; font-weight: 800;' : ''}">
+                🛰️ Random Location Checks (${locTotalChecks})
+                <c:if test="${locOutsideGeofence > 0}">
+                    <span class="status-pill" style="background: #DC2626; color: #FFFFFF; font-size: 0.68rem; padding: 2px 6px; font-weight: 800; margin-left: 4px;">${locOutsideGeofence} PENDING REVIEW</span>
+                </c:if>
             </button>
         </div>
 
@@ -867,6 +905,205 @@
             </div>
         </div>
 
+        <!-- =================================================================== -->
+        <!-- TAB 5: STUDENT RANDOM LOCATION VERIFICATION & GEOFENCE REVIEW -->
+        <!-- =================================================================== -->
+        <div id="tabContent-location" style="display: ${activeTab == 'location' ? 'block' : 'none'};">
+            <!-- Header Bar -->
+            <div class="card mb-16" style="background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); color: #FFFFFF; padding: 1.25rem 1.5rem; border-radius: 12px;">
+                <div class="flex-between" style="flex-wrap: wrap; gap: 1rem;">
+                    <div>
+                        <div class="flex items-center gap-8 mb-4">
+                            <span style="font-size: 1.25rem;">🛰️</span>
+                            <h3 class="font-bold text-lg text-white" style="margin: 0;">Student Random Location Verification &amp; Geofence Review</h3>
+                        </div>
+                        <p class="text-xs text-muted" style="color: #94A3B8; margin: 0;">
+                            4&ndash;5 server-scheduled GPS verification events per student per day (9:05 AM &ndash; 3:40 PM, excluding 12:20&ndash;1:10 PM lunch).
+                            Review outside-campus detections to verify if student had an authorized reason (e.g. medical, official duty) or confirm absence.
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-8">
+                        <span class="status-pill" style="background: rgba(56, 189, 248, 0.2); color: #38BDF8; font-weight: 700;">
+                            Jaipur Campus Geofence: 1,000m
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Telemetry Metrics Grid -->
+            <div class="stats-grid-4 mb-16" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+                <div class="card p-12" style="margin: 0; background: #FFFFFF; border: 1px solid #CBD5E1;">
+                    <span class="text-xs text-muted font-bold" style="text-transform: uppercase;">Total Monitored</span>
+                    <div style="font-size: 1.5rem; font-weight: 800; color: #0F172A; margin-top: 2px;">${locTotalChecks}</div>
+                    <span class="text-xs text-muted">Checks for your students</span>
+                </div>
+                <div class="card p-12" style="margin: 0; background: #F0FDF4; border: 1px solid #86EFAC;">
+                    <span class="text-xs font-bold" style="color: #166534; text-transform: uppercase;">Verified On Campus</span>
+                    <div style="font-size: 1.5rem; font-weight: 800; color: #15803D; margin-top: 2px;">${locVerifiedCampus}</div>
+                    <span class="text-xs text-muted">Within 1,000m geofence</span>
+                </div>
+                <div class="card p-12" style="margin: 0; background: ${locOutsideGeofence > 0 ? '#FEF2F2' : '#F8FAFC'}; border: 1px solid ${locOutsideGeofence > 0 ? '#F87171' : '#CBD5E1'};">
+                    <span class="text-xs font-bold" style="color: ${locOutsideGeofence > 0 ? '#DC2626' : '#64748B'}; text-transform: uppercase;">Outside Geofence</span>
+                    <div style="font-size: 1.5rem; font-weight: 800; color: ${locOutsideGeofence > 0 ? '#DC2626' : '#64748B'}; margin-top: 2px;">${locOutsideGeofence}</div>
+                    <span class="text-xs" style="color: ${locOutsideGeofence > 0 ? '#B91C1C' : '#94A3B8'}; font-weight: ${locOutsideGeofence > 0 ? '700' : '400'};">
+                        ${locOutsideGeofence > 0 ? 'Requires Faculty Action' : 'All clear on campus'}
+                    </span>
+                </div>
+                <div class="card p-12" style="margin: 0; background: #FFFBEB; border: 1px solid #FDE68A;">
+                    <span class="text-xs font-bold" style="color: #92400E; text-transform: uppercase;">GPS Inaccurate / Offline</span>
+                    <div style="font-size: 1.5rem; font-weight: 800; color: #D97706; margin-top: 2px;">${locGpsFailures}</div>
+                    <span class="text-xs text-muted">No penalty applied (Rule 11)</span>
+                </div>
+            </div>
+
+            <!-- Location Records Table -->
+            <div class="portal-table-container">
+                <div class="table-header-bar flex-between" style="flex-wrap: wrap; gap: 1rem;">
+                    <div>
+                        <h4 class="table-title">Live Student Random Location Verification Telemetry</h4>
+                        <p class="table-subtitle">Fresh GPS coordinates collected autonomously during active student sessions</p>
+                    </div>
+                    <span class="status-pill pill-neutral font-mono text-xs">Total Records: ${facultyLocationChecks.size()}</span>
+                </div>
+
+                <div class="portal-table-responsive">
+                    <table class="portal-data-table">
+                        <thead>
+                            <tr>
+                                <th>Student</th>
+                                <th>Roll Number</th>
+                                <th>Class &amp; Section</th>
+                                <th>Scheduled Slot</th>
+                                <th>Check Time</th>
+                                <th>Coordinates &amp; Accuracy</th>
+                                <th>Campus Distance</th>
+                                <th>Verification Result</th>
+                                <th style="text-align: right;">Faculty Review Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <c:choose>
+                                <c:when test="${not empty facultyLocationChecks}">
+                                    <c:forEach var="chk" items="${facultyLocationChecks}">
+                                        <tr style="${chk.pendingFacultyReview ? 'background: #FEF2F2;' : ''}">
+                                            <td>
+                                                <strong class="text-dark">${chk.studentName}</strong>
+                                            </td>
+                                            <td>
+                                                <span class="font-mono text-xs font-semibold text-muted">${chk.studentRollNo}</span>
+                                            </td>
+                                            <td>${chk.studentBranch} &ndash; ${chk.studentSection}</td>
+                                            <td><span class="font-mono text-xs font-semibold">${chk.formattedScheduledTime}</span></td>
+                                            <td>
+                                                <c:choose>
+                                                    <c:when test="${chk.serverTimestamp != null}">
+                                                        <span class="font-mono text-xs">${chk.formattedServerTimestamp}</span>
+                                                    </c:when>
+                                                    <c:otherwise>&mdash;</c:otherwise>
+                                                </c:choose>
+                                            </td>
+                                            <td>
+                                                <c:choose>
+                                                    <c:when test="${chk.lat != null}">
+                                                        <span class="font-mono text-xs font-semibold text-dark">
+                                                            ${chk.lat}, ${chk.lng}
+                                                            <span style="color: ${chk.accuracy != null && chk.accuracy > 100 ? '#DC2626' : '#16A34A'};">
+                                                                (&plusmn;${Math.round(chk.accuracy)}m)
+                                                            </span>
+                                                        </span>
+                                                    </c:when>
+                                                    <c:otherwise>
+                                                        <span class="text-xs text-muted">&mdash;</span>
+                                                    </c:otherwise>
+                                                </c:choose>
+                                            </td>
+                                            <td>
+                                                <c:choose>
+                                                    <c:when test="${chk.distanceMeters != null}">
+                                                        <span class="font-mono text-xs ${chk.distanceMeters > 1000 ? 'text-red font-bold' : 'text-green'}">
+                                                            ${Math.round(chk.distanceMeters)}m
+                                                        </span>
+                                                    </c:when>
+                                                    <c:otherwise>&mdash;</c:otherwise>
+                                                </c:choose>
+                                            </td>
+                                            <td>
+                                                <c:choose>
+                                                    <c:when test="${chk.verificationResult == 'VERIFIED_CAMPUS'}">
+                                                        <span class="badge-status badge-present">✓ ON CAMPUS</span>
+                                                    </c:when>
+                                                    <c:when test="${chk.verificationResult == 'OUTSIDE_GEOFENCE' || chk.flaggedForReview}">
+                                                        <span class="badge-status badge-absent" style="background: #DC2626; color: #FFFFFF; font-weight: 800;">
+                                                            ⚠️ OUTSIDE CAMPUS
+                                                        </span>
+                                                    </c:when>
+                                                    <c:when test="${chk.verificationResult == 'ACCURACY_POOR'}">
+                                                        <span class="badge-status" style="background: #FEF3C7; color: #B45309; font-weight: 700;">
+                                                            POOR ACCURACY (&gt;100m)
+                                                        </span>
+                                                    </c:when>
+                                                    <c:when test="${chk.verificationResult == 'GPS_UNAVAILABLE' || chk.verificationResult == 'PERMISSION_DENIED'}">
+                                                        <span class="badge-status" style="background: #FFEDD5; color: #C2410C; font-weight: 700;">
+                                                            ${chk.verificationResult}
+                                                        </span>
+                                                    </c:when>
+                                                    <c:when test="${chk.verificationResult == 'EXPIRED_UNREACHABLE' || chk.status == 'EXPIRED'}">
+                                                        <span class="badge-status" style="background: #F1F5F9; color: #64748B;">
+                                                            OFFLINE / EXPIRED
+                                                        </span>
+                                                    </c:when>
+                                                    <c:when test="${chk.status == 'CANCELLED'}">
+                                                        <span class="badge-status pill-neutral">CANCELLED</span>
+                                                    </c:when>
+                                                    <c:otherwise>
+                                                        <span class="badge-status" style="background: #E0F2FE; color: #0369A1; font-weight: 700;">
+                                                            ⏳ SCHEDULED
+                                                        </span>
+                                                    </c:otherwise>
+                                                </c:choose>
+                                            </td>
+                                            <td style="text-align: right;">
+                                                <c:choose>
+                                                    <c:when test="${chk.facultyReviewStatus == 'APPROVED_VALID_REASON'}">
+                                                        <span class="badge-status badge-present" style="font-size: 0.72rem;">✓ Verified Present (True Reason)</span>
+                                                        <c:if test="${not empty chk.facultyReviewNotes}">
+                                                            <div class="text-xs text-muted" style="margin-top: 2px;">Note: ${chk.facultyReviewNotes}</div>
+                                                        </c:if>
+                                                    </c:when>
+                                                    <c:when test="${chk.facultyReviewStatus == 'REJECTED_ABSENT'}">
+                                                        <span class="badge-status badge-absent" style="font-size: 0.72rem;">✕ Confirmed Absent (Unauthorized)</span>
+                                                        <c:if test="${not empty chk.facultyReviewNotes}">
+                                                            <div class="text-xs text-muted" style="margin-top: 2px;">Note: ${chk.facultyReviewNotes}</div>
+                                                        </c:if>
+                                                    </c:when>
+                                                    <c:when test="${chk.pendingFacultyReview}">
+                                                        <button type="button" class="btn-primary-action btn-sm-action" style="background: #DC2626; color: #FFFFFF; font-weight: 800; border-radius: 6px; padding: 6px 12px; border: none; cursor: pointer;"
+                                                                onclick="openLocationReviewModal('${chk.id}', '${chk.studentName}', '${chk.studentRollNo}', '${Math.round(chk.distanceMeters)}', '${chk.formattedScheduledTime}', '${chk.lat}, ${chk.lng}')">
+                                                            ⚠️ Verify Attendance
+                                                        </button>
+                                                    </c:when>
+                                                    <c:otherwise>
+                                                        <span class="text-xs text-muted">No review needed</span>
+                                                    </c:otherwise>
+                                                </c:choose>
+                                            </td>
+                                        </tr>
+                                    </c:forEach>
+                                </c:when>
+                                <c:otherwise>
+                                    <tr>
+                                        <td colspan="9" class="text-center py-24 text-muted text-xs">
+                                            No random location verification checks found for this date.
+                                        </td>
+                                    </tr>
+                                </c:otherwise>
+                            </c:choose>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <!-- =================================================================== -->
@@ -1020,6 +1257,87 @@
                 <div class="modal-footer">
                     <button type="button" class="btn-secondary-action" onclick="closeOverrideModal()">Cancel</button>
                     <button type="submit" class="btn-primary-action">Confirm & Save Override</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Faculty Location Review & Verification Modal -->
+    <div class="modal-overlay" id="locationReviewModal" style="display: none;">
+        <div class="modal-box">
+            <div class="modal-header">
+                <div>
+                    <h3 class="modal-title" style="color: #991B1B;">⚠️ Verify Student Outside-Campus Attendance</h3>
+                    <p class="modal-subtitle">Review location evidence to determine if the student had an authorized reason</p>
+                </div>
+                <button type="button" onclick="closeLocationReviewModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-muted);">&times;</button>
+            </div>
+            <form action="${pageContext.request.contextPath}/faculty/dashboard" method="post" onsubmit="return validateLocationReviewForm()">
+                <input type="hidden" name="action" value="verify_location">
+                <input type="hidden" name="checkId" id="locReviewCheckId" value="">
+
+                <div class="modal-body">
+                    <!-- Student & Location Evidence Info Box -->
+                    <div style="background: #FEF2F2; border: 1.5px solid #FCA5A5; border-radius: 8px; padding: 12px; margin-bottom: 1rem;">
+                        <div class="flex-between mb-4">
+                            <span class="text-xs font-bold" style="color: #991B1B;">STUDENT:</span>
+                            <span class="font-bold text-dark text-sm" id="locReviewStudentName">&mdash;</span>
+                        </div>
+                        <div class="flex-between mb-4">
+                            <span class="text-xs font-bold" style="color: #991B1B;">ROLL NUMBER:</span>
+                            <span class="font-mono text-xs font-bold text-dark" id="locReviewStudentRoll">&mdash;</span>
+                        </div>
+                        <div class="flex-between mb-4">
+                            <span class="text-xs font-bold" style="color: #991B1B;">DISTANCE FROM CAMPUS:</span>
+                            <span class="font-mono text-xs font-bold text-red" id="locReviewDistance">&mdash;</span>
+                        </div>
+                        <div class="flex-between">
+                            <span class="text-xs font-bold" style="color: #991B1B;">CHECK SLOT:</span>
+                            <span class="font-mono text-xs font-bold text-dark" id="locReviewSlot">&mdash;</span>
+                        </div>
+                    </div>
+
+                    <!-- Decision Selector -->
+                    <div class="form-group mb-12">
+                        <label class="form-label font-bold text-xs" style="color: #0F172A;">Faculty Verification Decision <span class="text-red">*</span></label>
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            <label style="display: flex; align-items: flex-start; gap: 8px; padding: 10px; border: 1.5px solid #86EFAC; background: #F0FDF4; border-radius: 8px; cursor: pointer;">
+                                <input type="radio" name="decision" value="APPROVE_PRESENT" required style="margin-top: 3px;" checked>
+                                <div>
+                                    <strong style="color: #15803D; font-size: 0.88rem;">Valid / True Reason &mdash; Mark PRESENT</strong>
+                                    <p class="text-xs text-muted" style="margin: 2px 0 0 0;">
+                                        Student had an authorized reason to be outside campus (e.g. approved college duty, medical emergency, faculty-sanctioned work).
+                                    </p>
+                                </div>
+                            </label>
+                            <label style="display: flex; align-items: flex-start; gap: 8px; padding: 10px; border: 1.5px solid #FCA5A5; background: #FEF2F2; border-radius: 8px; cursor: pointer;">
+                                <input type="radio" name="decision" value="REJECT_ABSENT" required style="margin-top: 3px;">
+                                <div>
+                                    <strong style="color: #B91C1C; font-size: 0.88rem;">Unauthorized Absence &mdash; Confirm ABSENT</strong>
+                                    <p class="text-xs text-muted" style="margin: 2px 0 0 0;">
+                                        Student left the campus geofence without valid permission or justification. Enforces full absence.
+                                    </p>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Mandatory Reason Notes -->
+                    <div class="form-group mb-12">
+                        <label class="form-label font-bold text-xs" for="locReviewNotes">Verification Notes / Justification <span class="text-red">*</span></label>
+                        <textarea name="reasonNotes" id="locReviewNotes" class="filter-control" rows="3" placeholder="Enter reason (e.g. 'Approved NSS camp duty verified with coordinator' or 'Left campus during class hours without permission')..." required></textarea>
+                    </div>
+
+                    <div style="background: #F1F5F9; border-radius: 8px; padding: 0.75rem; border: 1px solid #E2E8F0;">
+                        <label style="display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.78rem; color: var(--text-main); cursor: pointer;">
+                            <input type="checkbox" id="locReviewConfirm" required style="margin-top: 2px;">
+                            <span><strong>Faculty Confirmation:</strong> I confirm that I have verified the location alert for this student and this update is final and complies with academic rules.</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary-action" onclick="closeLocationReviewModal()">Cancel</button>
+                    <button type="submit" class="btn-primary-action" style="background: #0F172A;">Submit Verification Decision</button>
                 </div>
             </form>
         </div>
@@ -1233,10 +1551,48 @@
             return true;
         }
 
+        function openLocationReviewModal(checkId, studentName, rollNo, distanceMeters, slot, coords) {
+            document.getElementById('locReviewCheckId').value = checkId;
+            document.getElementById('locReviewStudentName').innerText = studentName;
+            document.getElementById('locReviewStudentRoll').innerText = rollNo;
+            document.getElementById('locReviewDistance').innerText = distanceMeters + 'm outside campus geofence (' + coords + ')';
+            document.getElementById('locReviewSlot').innerText = slot;
+            document.getElementById('locReviewNotes').value = '';
+            document.getElementById('locReviewConfirm').checked = false;
+
+            const modal = document.getElementById('locationReviewModal');
+            modal.style.display = 'flex';
+            modal.classList.add('active');
+        }
+
+        function closeLocationReviewModal() {
+            const modal = document.getElementById('locationReviewModal');
+            modal.style.display = 'none';
+            modal.classList.remove('active');
+        }
+
+        function validateLocationReviewForm() {
+            const notes = document.getElementById('locReviewNotes').value.trim();
+            const confirm = document.getElementById('locReviewConfirm').checked;
+            if (!notes) {
+                alert('Please enter verification remarks explaining why this student was outside the campus geofence (or confirming unauthorized absence).');
+                return false;
+            }
+            if (!confirm) {
+                alert('Please check the confirmation box before submitting the verification decision.');
+                return false;
+            }
+            return true;
+        }
+
         window.onclick = function(event) {
             const modal = document.getElementById('overrideModal');
             if (event.target === modal) {
                 closeOverrideModal();
+            }
+            const locModal = document.getElementById('locationReviewModal');
+            if (event.target === locModal) {
+                closeLocationReviewModal();
             }
         };
     </script>

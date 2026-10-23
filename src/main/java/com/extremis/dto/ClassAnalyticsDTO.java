@@ -2,13 +2,11 @@ package com.extremis.dto;
 
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Data Transfer Object representing aggregated analytics and performance distributions
- * for an academic Section or Branch (mentor wise alltoment).
+ * for an academic class or batch.
  */
 public class ClassAnalyticsDTO implements Serializable {
     private static final long serialVersionUID = 1L;

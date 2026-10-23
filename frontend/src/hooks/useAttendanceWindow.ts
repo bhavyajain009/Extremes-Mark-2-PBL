@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AttendanceWindowState } from '../types';
+import { AttendanceWindowState } from '../types';
 import { attendanceService } from '../services/api';
 
 // Global override for developer demonstration

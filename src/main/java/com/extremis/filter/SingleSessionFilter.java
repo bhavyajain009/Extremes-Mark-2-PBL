@@ -33,7 +33,10 @@ public class SingleSessionFilter implements Filter {
 
         // Skip static resources and auth endpoints
         if (path.startsWith("/css/") || path.startsWith("/js/") || path.startsWith("/images/") ||
-            path.startsWith("/uploads/") || path.equals("/login") || path.equals("/logout")) {
+            path.startsWith("/icons/") || path.startsWith("/uploads/") ||
+            path.equals("/manifest.json") || path.equals("/sw.js") ||
+            path.equals("/login") || path.equals("/logout") ||
+            path.startsWith("/api/random-checkin/")) {
             chain.doFilter(req, res);
             return;
         }

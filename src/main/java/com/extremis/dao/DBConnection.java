@@ -145,6 +145,100 @@ public class DBConnection {
                     "FOREIGN KEY(student_id) REFERENCES students(id), " +
                     "FOREIGN KEY(faculty_id) REFERENCES faculties(id))");
 
+            // 10. Random Check-In Settings Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS random_checkin_settings (" +
+                    "id INTEGER PRIMARY KEY CHECK (id = 1), " +
+                    "is_enabled INTEGER DEFAULT 1, " +
+                    "is_paused INTEGER DEFAULT 0, " +
+                    "earliest_time TEXT DEFAULT '09:15', " +
+                    "latest_time TEXT DEFAULT '15:30', " +
+                    "duration_minutes INTEGER DEFAULT 10, " +
+                    "min_interval_minutes INTEGER DEFAULT 45, " +
+                    "max_interval_minutes INTEGER DEFAULT 90, " +
+                    "challenges_per_day INTEGER DEFAULT 2, " +
+                    "target_type TEXT DEFAULT 'ALL', " +
+                    "target_value TEXT DEFAULT 'ALL', " +
+                    "updated_at TEXT)");
+
+            stmt.execute("INSERT OR IGNORE INTO random_checkin_settings " +
+                    "(id, is_enabled, is_paused, earliest_time, latest_time, duration_minutes, min_interval_minutes, max_interval_minutes, challenges_per_day, target_type, target_value, updated_at) " +
+                    "VALUES (1, 1, 0, '09:15', '15:30', 10, 45, 90, 2, 'ALL', 'ALL', datetime('now'))");
+
+            // 10b. Attendance Timer Settings Table (Checkin & Checkout Timers + Duration Slots)
+            stmt.execute("CREATE TABLE IF NOT EXISTS attendance_timer_settings (" +
+                    "id INTEGER PRIMARY KEY CHECK (id = 1), " +
+                    "checkin_timer_enabled INTEGER DEFAULT 1, " +
+                    "checkin_start_time TEXT DEFAULT '08:50', " +
+                    "checkin_end_time TEXT DEFAULT '09:05', " +
+                    "checkin_duration_minutes INTEGER DEFAULT 15, " +
+                    "checkout_timer_enabled INTEGER DEFAULT 1, " +
+                    "checkout_start_time TEXT DEFAULT '15:40', " +
+                    "checkout_end_time TEXT DEFAULT '18:00', " +
+                    "checkout_duration_minutes INTEGER DEFAULT 140, " +
+                    "updated_at TEXT)");
+
+            stmt.execute("INSERT OR IGNORE INTO attendance_timer_settings " +
+                    "(id, checkin_timer_enabled, checkin_start_time, checkin_end_time, checkin_duration_minutes, " +
+                    "checkout_timer_enabled, checkout_start_time, checkout_end_time, checkout_duration_minutes, updated_at) " +
+                    "VALUES (1, 1, '08:50', '09:05', 15, 1, '15:40', '18:00', 140, datetime('now'))");
+
+            // 11. Random Challenges Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS random_challenges (" +
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                    "challenge_code TEXT UNIQUE NOT NULL, " +
+                    "scheduled_time TEXT NOT NULL, " +
+                    "deadline_time TEXT NOT NULL, " +
+                    "duration_minutes INTEGER NOT NULL, " +
+                    "status TEXT NOT NULL, " +
+                    "target_type TEXT NOT NULL, " +
+                    "target_value TEXT NOT NULL, " +
+                    "is_manual INTEGER DEFAULT 0, " +
+                    "created_at TEXT NOT NULL, " +
+                    "created_by TEXT NOT NULL)");
+
+            // 12. Student Random Challenges Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS student_random_challenges (" +
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                    "challenge_id INTEGER NOT NULL, " +
+                    "student_id INTEGER NOT NULL, " +
+                    "status TEXT NOT NULL, " +
+                    "responded_at TEXT, " +
+                    "lat REAL, " +
+                    "lng REAL, " +
+                    "accuracy REAL, " +
+                    "photo_path TEXT, " +
+                    "UNIQUE(challenge_id, student_id), " +
+                    "FOREIGN KEY(challenge_id) REFERENCES random_challenges(id) ON DELETE CASCADE, " +
+                    "FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE)");
+
+            // 13. Random Location Verification Checks Table
+            stmt.execute("CREATE TABLE IF NOT EXISTS random_location_checks (" +
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                    "student_id INTEGER NOT NULL, " +
+                    "attendance_id INTEGER, " +
+                    "check_date TEXT NOT NULL, " +
+                    "scheduled_time TEXT NOT NULL, " +
+                    "window_end_time TEXT NOT NULL, " +
+                    "status TEXT NOT NULL, " +
+                    "verification_result TEXT, " +
+                    "lat REAL, " +
+                    "lng REAL, " +
+                    "accuracy REAL, " +
+                    "distance_meters REAL, " +
+                    "server_timestamp TEXT, " +
+                    "client_timestamp TEXT, " +
+                    "failure_reason TEXT, " +
+                    "flagged_for_review INTEGER DEFAULT 0, " +
+                    "created_at TEXT NOT NULL, " +
+                    "FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE, " +
+                    "FOREIGN KEY(attendance_id) REFERENCES attendance(id) ON DELETE CASCADE)");
+            try { stmt.execute("CREATE INDEX IF NOT EXISTS idx_rlc_student_date ON random_location_checks(student_id, check_date)"); } catch (SQLException ignored) {}
+            try { stmt.execute("CREATE INDEX IF NOT EXISTS idx_rlc_status ON random_location_checks(status)"); } catch (SQLException ignored) {}
+            try { stmt.execute("ALTER TABLE random_location_checks ADD COLUMN faculty_review_status TEXT"); } catch (SQLException ignored) {}
+            try { stmt.execute("ALTER TABLE random_location_checks ADD COLUMN faculty_review_notes TEXT"); } catch (SQLException ignored) {}
+            try { stmt.execute("ALTER TABLE random_location_checks ADD COLUMN faculty_reviewed_by TEXT"); } catch (SQLException ignored) {}
+            try { stmt.execute("ALTER TABLE random_location_checks ADD COLUMN faculty_reviewed_at TEXT"); } catch (SQLException ignored) {}
+
             try { stmt.execute("ALTER TABLE notices ADD COLUMN is_read INTEGER DEFAULT 0"); } catch (SQLException ignored) {}
             try { stmt.execute("ALTER TABLE students ADD COLUMN permissions_accepted INTEGER DEFAULT 0"); } catch (SQLException ignored) {}
             try { stmt.execute("ALTER TABLE students ADD COLUMN class_id INTEGER"); } catch (SQLException ignored) {}
@@ -165,14 +259,14 @@ public class DBConnection {
             // Seed sample classes and batches
             seedClassesAndBatches(conn);
 
-            // Seed sample students
+            // Seed sample students (strictly Bhavya Kumar Bohra demo + 5 students)
             seedStudents(conn);
 
+            // Clean up unnecessary demo/test accounts
+            cleanupDemoAccounts(conn);
+
             // Seed sample faculties
-            ResultSet rsF = stmt.executeQuery("SELECT COUNT(*) FROM faculties");
-            if (rsF.next() && rsF.getInt(1) == 0) {
-                seedFaculties(conn);
-            }
+            seedFaculties(conn);
 
             // Seed sample teacher assignments
             seedTeacherAssignments(conn);
@@ -462,7 +556,8 @@ public class DBConnection {
 
     private static void seedFaculties(Connection conn) throws SQLException {
         String facPassHash = hashPassword("FacultyPassword123!");
-        String insertFac = "INSERT OR IGNORE INTO faculties (faculty_id, name, email, branch, section, password_hash) VALUES (?, ?, ?, ?, ?, ?)";
+        String insertFac = "INSERT INTO faculties (faculty_id, name, email, branch, section, password_hash) VALUES (?, ?, ?, ?, ?, ?) " +
+                "ON CONFLICT(faculty_id) DO UPDATE SET password_hash = excluded.password_hash, name = excluded.name, is_active = 1";
         try (PreparedStatement ps = conn.prepareStatement(insertFac)) {
             // Faculty 1: AI - Section A
             ps.setString(1, "FAC001");
@@ -495,7 +590,8 @@ public class DBConnection {
 
     private static void seedAdmins(Connection conn) throws SQLException {
         String adminPassHash = hashPassword("AdminPassword123!");
-        String insertAdm = "INSERT OR IGNORE INTO admins (username, name, email, password_hash) VALUES (?, ?, ?, ?)";
+        String insertAdm = "INSERT INTO admins (username, name, email, password_hash) VALUES (?, ?, ?, ?) " +
+                "ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, name = excluded.name";
         try (PreparedStatement ps = conn.prepareStatement(insertAdm)) {
             ps.setString(1, "admin");
             ps.setString(2, "Chief Administrator");
@@ -507,52 +603,62 @@ public class DBConnection {
 
     private static void seedStudents(Connection conn) throws SQLException {
         String studentPassHash = hashPassword("StudentPassword123!");
-        String insertStudent = "INSERT OR IGNORE INTO students (roll_no, name, email, branch, section, password_hash, permissions_accepted) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        String insertStudent = "INSERT INTO students (roll_no, name, email, branch, section, password_hash, permissions_accepted, class_id, batch_id) " +
+                "VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?) " +
+                "ON CONFLICT(roll_no) DO UPDATE SET password_hash = excluded.password_hash, permissions_accepted = 1, class_id = excluded.class_id, batch_id = excluded.batch_id";
 
-        String[][] students = {
-            // Class 1: AI - Section A (Faculty: Dr. Rajesh Sharma - FAC001)
-            {"24EARAD031", "Bhavya Kumar Bohra", "bhavya.24earad031@aryacollege.edu.in", "AI", "Section A"},
-            {"24EARAD001", "Aarav Sharma", "aarav.24earad001@aryacollege.edu.in", "AI", "Section A"},
-            {"24EARAD002", "Ananya Gupta", "ananya.24earad002@aryacollege.edu.in", "AI", "Section A"},
-            {"24EARAD003", "Rohan Mehta", "rohan.24earad003@aryacollege.edu.in", "AI", "Section A"},
-            {"24EARAD004", "Sneha Jain", "sneha.24earad004@aryacollege.edu.in", "AI", "Section A"},
-            {"24EARAD005", "Devendra Rathore", "devendra.24earad005@aryacollege.edu.in", "AI", "Section A"},
+        // Exactly 1 Demo account + 5 Student accounts
+        Object[][] students = {
+            // Demo Student: Bhavya Kumar Bohra (AI - Section A, Class 1, Batch 1)
+            {"24EARAD031", "Bhavya Kumar Bohra", "bhavya.24earad031@aryacollege.edu.in", "AI", "Section A", 1L, 1L},
 
-            // Class 2: CS - Section A (Faculty: Prof. Priya Verma - FAC002)
-            {"24ECS001", "Ishan Verma", "ishan.24ecs001@aryacollege.edu.in", "CS", "Section A"},
-            {"24ECS002", "Diya Joshi", "diya.24ecs002@aryacollege.edu.in", "CS", "Section A"},
-            {"24ECS003", "Kabir Singh", "kabir.24ecs003@aryacollege.edu.in", "CS", "Section A"},
-            {"24ECS004", "Riya Kapoor", "riya.24ecs004@aryacollege.edu.in", "CS", "Section A"},
-            {"24ECS005", "Aryan Choudhary", "aryan.24ecs005@aryacollege.edu.in", "CS", "Section A"},
+            // Student 1: Aarav Sharma (AI - Section A, Class 1, Batch 1)
+            {"24EARAD001", "Aarav Sharma", "aarav.24earad001@aryacollege.edu.in", "AI", "Section A", 1L, 1L},
 
-            // Class 3: ECE - Section A (Faculty: Dr. Amit Patel - FAC003)
-            {"24ECE001", "Aditya Roy", "aditya.24ece001@aryacollege.edu.in", "ECE", "Section A"},
-            {"24ECE002", "Tanvi Shah", "tanvi.24ece002@aryacollege.edu.in", "ECE", "Section A"},
-            {"24ECE003", "Vikram Malhotra", "vikram.24ece003@aryacollege.edu.in", "ECE", "Section A"},
-            {"24ECE004", "Meera Nair", "meera.24ece004@aryacollege.edu.in", "ECE", "Section A"}
+            // Student 2: Ananya Gupta (AI - Section A, Class 1, Batch 1)
+            {"24EARAD002", "Ananya Gupta", "ananya.24earad002@aryacollege.edu.in", "AI", "Section A", 1L, 1L},
+
+            // Student 3: Ishan Verma (CS - Section A, Class 2, Batch 3)
+            {"24ECS001", "Ishan Verma", "ishan.24ecs001@aryacollege.edu.in", "CS", "Section A", 2L, 3L},
+
+            // Student 4: Diya Joshi (CS - Section A, Class 2, Batch 3)
+            {"24ECS002", "Diya Joshi", "diya.24ecs002@aryacollege.edu.in", "CS", "Section A", 2L, 3L},
+
+            // Student 5: Aditya Roy (ECE - Section A, Class 3, Batch 5)
+            {"24ECE001", "Aditya Roy", "aditya.24ece001@aryacollege.edu.in", "ECE", "Section A", 3L, 5L}
         };
 
         try (PreparedStatement ps = conn.prepareStatement(insertStudent)) {
-            for (String[] s : students) {
-                ps.setString(1, s[0]);
-                ps.setString(2, s[1]);
-                ps.setString(3, s[2]);
-                ps.setString(4, s[3]);
-                ps.setString(5, s[4]);
+            for (Object[] s : students) {
+                ps.setString(1, (String) s[0]);
+                ps.setString(2, (String) s[1]);
+                ps.setString(3, (String) s[2]);
+                ps.setString(4, (String) s[3]);
+                ps.setString(5, (String) s[4]);
                 ps.setString(6, studentPassHash);
-                ps.setInt(7, 1);
+                ps.setLong(7, (Long) s[5]);
+                ps.setLong(8, (Long) s[6]);
                 ps.executeUpdate();
             }
+        }
+    }
 
-            // STU2024001 alias for Bhavya
-            ps.setString(1, "STU2024001");
-            ps.setString(2, "Bhavya Kumar Bohra");
-            ps.setString(3, "bhavya.24earad031@aryacollege.edu.in");
-            ps.setString(4, "AI");
-            ps.setString(5, "Section A");
-            ps.setString(6, studentPassHash);
-            ps.setInt(7, 1);
-            ps.executeUpdate();
+    private static void cleanupDemoAccounts(Connection conn) {
+        try (Statement stmt = conn.createStatement()) {
+            // Keep exactly Bhavya Kumar Bohra (24EARAD031) and the 5 configured student accounts
+            stmt.executeUpdate("DELETE FROM students WHERE roll_no NOT IN (" +
+                    "'24EARAD031', '24EARAD001', '24EARAD002', '24ECS001', '24ECS002', '24ECE001')");
+
+            // Clean up old temporary faculty accounts (TCH_TEST_...)
+            stmt.executeUpdate("DELETE FROM faculties WHERE faculty_id LIKE 'TCH_TEST_%'");
+
+            // Ensure consistent class_id and batch_id for all students
+            stmt.executeUpdate("UPDATE students SET class_id = 1, batch_id = 1 WHERE branch = 'AI'");
+            stmt.executeUpdate("UPDATE students SET class_id = 2, batch_id = 3 WHERE branch = 'CS'");
+            stmt.executeUpdate("UPDATE students SET class_id = 3, batch_id = 5 WHERE branch = 'ECE'");
+            stmt.executeUpdate("UPDATE students SET permissions_accepted = 1");
+        } catch (SQLException e) {
+            e.printStackTrace();
         }
     }
 
@@ -590,51 +696,6 @@ public class DBConnection {
         }
     }
 
-    private static void seedAttendance(Connection conn) throws SQLException {
-        // Seed 30 days of attendance records for October 2026 matching Screen 3 & 7 mockup
-        // (Present: 22, Absent: 3, OD: 0, Total: 25)
-        String insertAtt = "INSERT OR IGNORE INTO attendance (student_id, date, check_in_time, check_out_time, checkin_lat, checkin_lng, checkin_accuracy, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-        try (PreparedStatement ps = conn.prepareStatement(insertAtt)) {
-            // Days: 1 to 10
-            for (int day = 1; day <= 10; day++) {
-                String dateStr = String.format("2026-10-%02d", day);
-                LocalDate d = LocalDate.parse(dateStr);
-                boolean isSunday = d.getDayOfWeek().getValue() == 7;
-
-                ps.setLong(1, 1L); // student 1
-                ps.setString(2, dateStr);
-
-                if (day == 4 || day == 7 || isSunday) {
-                    // Absent
-                    ps.setNull(3, java.sql.Types.VARCHAR);
-                    ps.setNull(4, java.sql.Types.VARCHAR);
-                    ps.setNull(5, java.sql.Types.REAL);
-                    ps.setNull(6, java.sql.Types.REAL);
-                    ps.setNull(7, java.sql.Types.REAL);
-                    ps.setString(8, "ABSENT");
-                } else if (day == 10) {
-                    // Today: 10 Oct, 08:52 AM checked in, not checked out yet
-                    ps.setString(3, "08:52:00");
-                    ps.setNull(4, java.sql.Types.VARCHAR);
-                    ps.setDouble(5, 26.9131);
-                    ps.setDouble(6, 75.8089);
-                    ps.setDouble(7, 18.0);
-                    ps.setString(8, "PRESENT");
-                } else {
-                    // Present
-                    String cin = String.format("08:%02d:00", 50 + (day % 6));
-                    String cout = String.format("15:%02d:00", 40 + (day % 5));
-                    ps.setString(3, cin);
-                    ps.setString(4, cout);
-                    ps.setDouble(5, 26.9131);
-                    ps.setDouble(6, 75.8089);
-                    ps.setDouble(7, 18.0);
-                    ps.setString(8, "PRESENT");
-                }
-                ps.executeUpdate();
-            }
-        }
-    }
 
     /**
      * Utility to hash passwords using SHA-256.

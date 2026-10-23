@@ -1,0 +1,14 @@
+target/
+*.class
+*.log
+cp.txt
+scratch/
+scratch_check/
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+frontend/node_modules/
+frontend/dist/
+frontend/.oxlintrc.json

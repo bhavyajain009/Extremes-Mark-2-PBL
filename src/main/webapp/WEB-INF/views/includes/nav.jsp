@@ -28,3 +28,9 @@
         <span>Profile</span>
     </a>
 </nav>
+
+<script>
+    window.EXTREMIS_CONTEXT_PATH = '${pageContext.request.contextPath}';
+</script>
+<script src="${pageContext.request.contextPath}/js/randomizer-tracker.js"></script>
+

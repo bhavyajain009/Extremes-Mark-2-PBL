@@ -1,7 +1,9 @@
 package com.extremis.servlet;
 
+import com.extremis.model.AttendanceRecord;
 import com.extremis.model.Student;
 import com.extremis.service.AttendanceService;
+import com.extremis.service.RandomCheckInService;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
@@ -18,12 +20,10 @@ import java.util.Base64;
 public class CheckInServlet extends HttpServlet {
 
     private final AttendanceService attendanceService = new AttendanceService();
+    private final RandomCheckInService randomCheckInService = new RandomCheckInService();
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        HttpSession session = req.getSession();
-        Student student = (Student) session.getAttribute("currentStudent");
-
         req.setAttribute("mode", "CHECK_IN");
         req.setAttribute("pageTitle", "Check In");
         req.setAttribute("submitButtonText", "Submit Check In");
@@ -66,6 +66,15 @@ public class CheckInServlet extends HttpServlet {
             req.setAttribute("submitButtonText", "Submit Check In");
             req.getRequestDispatcher("/WEB-INF/views/checkin.jsp").forward(req, resp);
         } else {
+            // Schedule 4-5 random location verification events for this student for today
+            try {
+                AttendanceRecord att = attendanceService.getTodayAttendance(student.getId());
+                Long attId = (att != null) ? att.getId() : null;
+                randomCheckInService.scheduleStudentDailyVerifications(student.getId(), attendanceService.getEffectiveDate(), attId);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
             session.setAttribute("flashSuccess", "Check In recorded successfully!");
             resp.sendRedirect(req.getContextPath() + "/dashboard");
         }

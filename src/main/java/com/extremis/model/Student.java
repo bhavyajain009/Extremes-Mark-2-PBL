@@ -27,7 +27,8 @@ public class Student implements Serializable {
     public Student() {
     }
 
-    public Student(Long id, String rollNo, String name, String email, String branch, String section, String passwordHash, String sessionToken) {
+    public Student(Long id, String rollNo, String name, String email, String branch, String section,
+            String passwordHash, String sessionToken) {
         this.id = id;
         this.rollNo = rollNo;
         this.name = name;
@@ -111,17 +112,37 @@ public class Student implements Serializable {
         this.permissionsAccepted = permissionsAccepted;
     }
 
-    public Long getClassId() { return classId; }
-    public void setClassId(Long classId) { this.classId = classId; }
+    public Long getClassId() {
+        return classId;
+    }
 
-    public Long getBatchId() { return batchId; }
-    public void setBatchId(Long batchId) { this.batchId = batchId; }
+    public void setClassId(Long classId) {
+        this.classId = classId;
+    }
 
-    public String getBatchCode() { return batchCode; }
-    public void setBatchCode(String batchCode) { this.batchCode = batchCode; }
+    public Long getBatchId() {
+        return batchId;
+    }
 
-    public String getBatchName() { return batchName; }
-    public void setBatchName(String batchName) { this.batchName = batchName; }
+    public void setBatchId(Long batchId) {
+        this.batchId = batchId;
+    }
+
+    public String getBatchCode() {
+        return batchCode;
+    }
+
+    public void setBatchCode(String batchCode) {
+        this.batchCode = batchCode;
+    }
+
+    public String getBatchName() {
+        return batchName;
+    }
+
+    public void setBatchName(String batchName) {
+        this.batchName = batchName;
+    }
 
     public String getDisplayBatch() {
         if (batchCode != null && !batchCode.trim().isEmpty()) {

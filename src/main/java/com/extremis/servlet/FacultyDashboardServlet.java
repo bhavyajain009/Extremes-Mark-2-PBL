@@ -12,8 +12,10 @@ import com.extremis.model.AttendanceRecord;
 import com.extremis.model.BatchEntity;
 import com.extremis.model.ClassEntity;
 import com.extremis.model.Faculty;
+import com.extremis.model.RandomLocationCheck;
 import com.extremis.model.Student;
 import com.extremis.model.TeacherAssignment;
+import com.extremis.service.RandomCheckInService;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
@@ -40,6 +42,7 @@ public class FacultyDashboardServlet extends HttpServlet {
     private final TeacherAssignmentDAO assignmentDAO = new TeacherAssignmentDAO();
     private final ClassDAO classDAO = new ClassDAO();
     private final StudentDAO studentDAO = new StudentDAO();
+    private final RandomCheckInService randomCheckInService = new RandomCheckInService();
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
@@ -116,7 +119,6 @@ public class FacultyDashboardServlet extends HttpServlet {
         }
 
         // Determine Reporting Date Range
-        LocalDate now = LocalDate.now();
         LocalDate startDate = LocalDate.of(2026, 10, 1);
         LocalDate endDate = LocalDate.of(2026, 10, 12);
 
@@ -222,6 +224,40 @@ public class FacultyDashboardServlet extends HttpServlet {
         req.setAttribute("dailyExcused", dailyExcused);
 
         req.setAttribute("recentOverrides", recentOverrides);
+
+        // 5. Random Location Verification Records for Faculty Students
+        LocalDate effectiveToday = randomCheckInService.getEffectiveDate();
+        LocalDate dateForLocation = (dailyDateParam != null && !dailyDateParam.trim().isEmpty()) ? selectedDailyDate : effectiveToday;
+        List<RandomLocationCheck> facultyLocationChecks = randomCheckInService.getLocationChecksForFaculty(faculty.getId(), dateForLocation);
+        if (facultyLocationChecks.isEmpty() && !dateForLocation.equals(effectiveToday)) {
+            facultyLocationChecks = randomCheckInService.getLocationChecksForFaculty(faculty.getId(), effectiveToday);
+        }
+        if (facultyLocationChecks.isEmpty()) {
+            facultyLocationChecks = randomCheckInService.getRecentLocationChecks(40);
+        }
+
+        int locOutsideGeofenceCount = 0;
+        int locVerifiedCampusCount = 0;
+        int locGpsFailuresCount = 0;
+        int locPendingCount = 0;
+        for (RandomLocationCheck rlc : facultyLocationChecks) {
+            if (rlc.isPendingFacultyReview() || "OUTSIDE_GEOFENCE".equalsIgnoreCase(rlc.getVerificationResult())) {
+                locOutsideGeofenceCount++;
+            } else if ("VERIFIED_CAMPUS".equalsIgnoreCase(rlc.getVerificationResult())) {
+                locVerifiedCampusCount++;
+            } else if ("FAILED".equalsIgnoreCase(rlc.getStatus()) || "ACCURACY_POOR".equalsIgnoreCase(rlc.getVerificationResult())) {
+                locGpsFailuresCount++;
+            } else if ("SCHEDULED".equalsIgnoreCase(rlc.getStatus()) || "ACTIVE".equalsIgnoreCase(rlc.getStatus())) {
+                locPendingCount++;
+            }
+        }
+
+        req.setAttribute("facultyLocationChecks", facultyLocationChecks);
+        req.setAttribute("locTotalChecks", facultyLocationChecks.size());
+        req.setAttribute("locOutsideGeofence", locOutsideGeofenceCount);
+        req.setAttribute("locVerifiedCampus", locVerifiedCampusCount);
+        req.setAttribute("locGpsFailures", locGpsFailuresCount);
+        req.setAttribute("locPending", locPendingCount);
 
         req.getRequestDispatcher("/WEB-INF/views/faculty-dashboard.jsp").forward(req, resp);
     }
@@ -403,5 +439,45 @@ public class FacultyDashboardServlet extends HttpServlet {
             }
         }
         return sb.toString();
+    }
+
+    @Override
+    protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        HttpSession session = req.getSession(false);
+        Faculty faculty = (session != null) ? (Faculty) session.getAttribute("currentFaculty") : null;
+
+        if (faculty == null || !faculty.isActive()) {
+            resp.sendRedirect(req.getContextPath() + "/login");
+            return;
+        }
+
+        String action = req.getParameter("action");
+        if ("verify_location".equalsIgnoreCase(action)) {
+            String checkIdStr = req.getParameter("checkId");
+            String decision = req.getParameter("decision"); // "APPROVE_PRESENT" or "REJECT_ABSENT"
+            String notes = req.getParameter("reasonNotes");
+
+            if (checkIdStr != null && decision != null) {
+                try {
+                    Long checkId = Long.parseLong(checkIdStr.trim());
+                    boolean ok = randomCheckInService.reviewStudentLocationCheck(checkId, decision, notes, faculty);
+                    if (ok) {
+                        if ("APPROVE_PRESENT".equalsIgnoreCase(decision)) {
+                            session.setAttribute("flashSuccess", "Location verified: Student attendance approved as PRESENT (Valid reason confirmed).");
+                        } else {
+                            session.setAttribute("flashSuccess", "Location verified: Student attendance confirmed as ABSENT (Unauthorized outside campus).");
+                        }
+                    } else {
+                        session.setAttribute("flashError", "Failed to update location verification review in database.");
+                    }
+                } catch (Exception e) {
+                    session.setAttribute("flashError", "Error processing verification review: " + e.getMessage());
+                }
+            }
+            resp.sendRedirect(req.getContextPath() + "/faculty/dashboard?tab=location");
+            return;
+        }
+
+        resp.sendRedirect(req.getContextPath() + "/faculty/dashboard");
     }
 }

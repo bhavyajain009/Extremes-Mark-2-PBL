@@ -1,11 +1,14 @@
 package com.extremis.service;
 
 import com.extremis.dao.AttendanceDAO;
+import com.extremis.dao.AttendanceTimerDAO;
 import com.extremis.model.AttendanceRecord;
+import com.extremis.model.AttendanceTimerSettings;
 
 import java.io.InputStream;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.Properties;
 
 /**
@@ -13,12 +16,26 @@ import java.util.Properties;
  */
 public class AttendanceService {
 
+    public static final ZoneId KOLKATA_ZONE = ZoneId.of("Asia/Kolkata");
     private final AttendanceDAO attendanceDAO = new AttendanceDAO();
+    private final AttendanceTimerDAO timerDAO = new AttendanceTimerDAO();
 
-    // Time window constants
+    // Default time window constants for reference
     public static final LocalTime CHECKIN_START = LocalTime.of(8, 50);
     public static final LocalTime CHECKIN_END = LocalTime.of(9, 5);
     public static final LocalTime CHECKOUT_START = LocalTime.of(15, 40);
+
+    // Lunch break exclusion gates (Asia/Kolkata)
+    public static final LocalTime LUNCH_START = LocalTime.of(12, 20);
+    public static final LocalTime LUNCH_END = LocalTime.of(13, 10);
+
+    public AttendanceTimerSettings getTimerSettings() {
+        try {
+            return timerDAO.getSettings();
+        } catch (Exception e) {
+            return new AttendanceTimerSettings();
+        }
+    }
 
     /**
      * Retrieves current effective server time, respecting dev.timeOverride in config.properties.
@@ -35,11 +52,11 @@ public class AttendanceService {
             }
         } catch (Exception ignored) {
         }
-        return LocalTime.now();
+        return LocalTime.now(KOLKATA_ZONE);
     }
 
     public LocalDate getEffectiveDate() {
-        return LocalDate.now();
+        return LocalDate.now(KOLKATA_ZONE);
     }
 
     public AttendanceRecord getTodayAttendance(Long studentId) {
@@ -51,7 +68,8 @@ public class AttendanceService {
      */
     public boolean isCheckInAllowed(Long studentId) {
         LocalTime now = getEffectiveTime();
-        if (now.isBefore(CHECKIN_START) || now.isAfter(CHECKIN_END)) {
+        AttendanceTimerSettings ts = getTimerSettings();
+        if (!ts.isCheckinWindowActive(now)) {
             return false;
         }
         AttendanceRecord today = getTodayAttendance(studentId);
@@ -63,7 +81,8 @@ public class AttendanceService {
      */
     public boolean isCheckOutAllowed(Long studentId) {
         LocalTime now = getEffectiveTime();
-        if (now.isBefore(CHECKOUT_START)) {
+        AttendanceTimerSettings ts = getTimerSettings();
+        if (!ts.isCheckoutWindowActive(now)) {
             return false;
         }
         AttendanceRecord today = getTodayAttendance(studentId);
@@ -83,11 +102,14 @@ public class AttendanceService {
         }
 
         LocalTime now = getEffectiveTime();
-        if (now.isBefore(CHECKIN_START)) {
-            return "Check In is not open yet. Window opens at 8:50 AM.";
-        }
-        if (now.isAfter(CHECKIN_END)) {
-            return "Check In window closed at 9:05 AM.";
+        AttendanceTimerSettings ts = getTimerSettings();
+        if (ts.isCheckinTimerEnabled()) {
+            if (ts.getCheckinStartTime() != null && now.isBefore(ts.getCheckinStartTime())) {
+                return "Check In is not open yet. Window opens at " + ts.getFormattedCheckinStart() + ".";
+            }
+            if (ts.getCheckinEndTime() != null && now.isAfter(ts.getCheckinEndTime())) {
+                return "Check In window closed at " + ts.getFormattedCheckinEnd() + ".";
+            }
         }
 
         AttendanceRecord existing = getTodayAttendance(studentId);
@@ -111,18 +133,22 @@ public class AttendanceService {
 
     /**
      * Performs student check-out with validation.
+     * NOTE: Photo is NOT required for check-out — only GPS location is verified.
      */
     public synchronized String performCheckOut(Long studentId, Double lat, Double lng, String photoPath) {
         if (lat == null || lng == null) {
             return "Check Out rejected: Location coordinates are required.";
         }
-        if (photoPath == null || photoPath.trim().isEmpty()) {
-            return "Check Out rejected: Camera photo capture is required.";
-        }
 
         LocalTime now = getEffectiveTime();
-        if (now.isBefore(CHECKOUT_START)) {
-            return "Check Out window opens after 3:40 PM.";
+        AttendanceTimerSettings ts = getTimerSettings();
+        if (ts.isCheckoutTimerEnabled()) {
+            if (ts.getCheckoutStartTime() != null && now.isBefore(ts.getCheckoutStartTime())) {
+                return "Check Out window opens after " + ts.getFormattedCheckoutStart() + ".";
+            }
+            if (ts.getCheckoutEndTime() != null && now.isAfter(ts.getCheckoutEndTime())) {
+                return "Check Out window closed at " + ts.getFormattedCheckoutEnd() + ".";
+            }
         }
 
         AttendanceRecord existing = getTodayAttendance(studentId);

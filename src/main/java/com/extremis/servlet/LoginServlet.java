@@ -101,7 +101,12 @@ public class LoginServlet extends HttpServlet {
             if (!student.isPermissionsAccepted()) {
                 resp.sendRedirect(req.getContextPath() + "/permissions");
             } else {
-                resp.sendRedirect(req.getContextPath() + "/dashboard");
+                String redirect = req.getParameter("redirect");
+                if (redirect != null && redirect.startsWith("/")) {
+                    resp.sendRedirect(req.getContextPath() + redirect);
+                } else {
+                    resp.sendRedirect(req.getContextPath() + "/dashboard");
+                }
             }
             return;
         }

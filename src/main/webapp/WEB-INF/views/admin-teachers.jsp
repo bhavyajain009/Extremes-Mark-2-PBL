@@ -8,39 +8,22 @@
     <title>Extremis - Teacher Management</title>
     <link rel="stylesheet" href="${pageContext.request.contextPath}/css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="${pageContext.request.contextPath}/css/admin-portal.css">
 </head>
-<body class="bg-light">
+<body class="admin-body">
 
-    <!-- Top Navigation Bar -->
-    <nav class="portal-navbar">
-        <div class="portal-navbar-inner">
-            <div class="portal-brand">
-                <div class="portal-brand-logo">E</div>
-                <div>
-                    <div class="portal-brand-title">Extremis</div>
-                    <div class="portal-brand-sub">Admin Control Center</div>
-                </div>
-            </div>
+    <div class="admin-layout">
+        <!-- Left Dark Navy Sidebar Navigation -->
+        <jsp:include page="/WEB-INF/views/includes/admin-sidebar.jsp">
+            <jsp:param name="activeSection" value="teachers" />
+        </jsp:include>
 
-            <ul class="portal-nav-links">
-                <li><a href="${pageContext.request.contextPath}/admin/dashboard" class="portal-nav-link">Dashboard</a></li>
-                <li><a href="${pageContext.request.contextPath}/admin/teachers" class="portal-nav-link active">Teachers</a></li>
-                <li><a href="${pageContext.request.contextPath}/admin/classes" class="portal-nav-link">Classes &amp; Batches</a></li>
-                <li><a href="${pageContext.request.contextPath}/admin/assignments" class="portal-nav-link">Assignments</a></li>
-                <li><a href="${pageContext.request.contextPath}/admin/overrides" class="portal-nav-link">Override History</a></li>
-            </ul>
+        <!-- Main Content Area -->
+        <div class="admin-main-wrapper">
+            <!-- Top White Header Bar -->
+            <jsp:include page="/WEB-INF/views/includes/admin-header.jsp" />
 
-            <div class="portal-nav-user">
-                <form action="${pageContext.request.contextPath}/logout" method="post" style="margin: 0;">
-                    <button type="submit" class="btn-secondary-action btn-sm-action" title="Logout" style="color: var(--danger-red-start);">
-                        Logout
-                    </button>
-                </form>
-            </div>
-        </div>
-    </nav>
-
-    <div class="app-container" style="max-width: 1200px; padding: 1.5rem 1.25rem 3rem;">
+            <main class="admin-content-area">
 
         <!-- Feedback Alerts -->
         <c:if test="${not empty param.success}">
@@ -202,8 +185,7 @@
                 </table>
             </div>
         </div>
-
-    </div>
+            </main>
 
     <!-- Add Teacher Modal -->
     <div class="modal-overlay" id="addTeacherModal">
@@ -320,5 +302,13 @@
             if (event.target === document.getElementById('editTeacherModal')) closeEditTeacherModal();
         };
     </script>
+
+    <!-- Reusable Modals (Reports, Settings, Notifications) -->
+    <jsp:include page="/WEB-INF/views/includes/admin-modals.jsp" />
+        </div>
+    </div>
+
+    <!-- Admin Portal Script -->
+    <script src="${pageContext.request.contextPath}/js/admin-portal.js"></script>
 </body>
 </html>

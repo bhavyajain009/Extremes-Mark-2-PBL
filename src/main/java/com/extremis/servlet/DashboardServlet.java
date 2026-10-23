@@ -32,7 +32,10 @@ public class DashboardServlet extends HttpServlet {
         int overallPct = attendanceService.getOverallAttendancePercentage(student.getId());
 
         LocalTime serverTime = attendanceService.getEffectiveTime();
-        boolean isEvening = !serverTime.isBefore(AttendanceService.CHECKOUT_START);
+        com.extremis.model.AttendanceTimerSettings ts = attendanceService.getTimerSettings();
+        boolean isEvening = ts.isCheckoutTimerEnabled() ?
+                (ts.getCheckoutStartTime() != null && !serverTime.isBefore(ts.getCheckoutStartTime())) :
+                (todayAttendance != null && todayAttendance.getCheckInTime() != null);
 
         // Calculate button state
         boolean canCheckIn = attendanceService.isCheckInAllowed(student.getId());
@@ -40,7 +43,8 @@ public class DashboardServlet extends HttpServlet {
 
         String buttonLabel = "Check In";
         String buttonColor = "blue";
-        String buttonSubtext = "Available 8:50 AM – 9:05 AM";
+        String buttonSubtext = ts.isCheckinTimerEnabled() ?
+                ("Available " + ts.getFormattedCheckinWindow()) : "Check-in Open (Timer Disabled)";
         boolean buttonEnabled = false;
         String actionUrl = req.getContextPath() + "/checkin";
 
@@ -54,11 +58,11 @@ public class DashboardServlet extends HttpServlet {
             actionUrl = req.getContextPath() + "/checkout";
             if (canCheckOut) {
                 buttonColor = "red";
-                buttonSubtext = "Evening departure available";
+                buttonSubtext = "Departure window available (" + ts.getFormattedCheckoutWindow() + ")";
                 buttonEnabled = true;
             } else {
                 buttonColor = "gray";
-                buttonSubtext = (todayAttendance == null) ? "Cannot check out: Not checked in today" : "Check Out window opens after 3:40 PM";
+                buttonSubtext = (todayAttendance == null) ? "Cannot check out: Not checked in today" : ("Check Out window opens after " + ts.getFormattedCheckoutStart());
                 buttonEnabled = false;
             }
         } else if (todayAttendance != null && todayAttendance.getCheckInTime() != null) {
@@ -66,15 +70,15 @@ public class DashboardServlet extends HttpServlet {
             buttonColor = "gray";
             buttonSubtext = "Checked in at " + todayAttendance.getFormattedCheckInTime();
             buttonEnabled = false;
-        } else if (serverTime.isBefore(AttendanceService.CHECKIN_START)) {
+        } else if (ts.isCheckinTimerEnabled() && ts.getCheckinStartTime() != null && serverTime.isBefore(ts.getCheckinStartTime())) {
             buttonLabel = "Check In";
             buttonColor = "gray";
-            buttonSubtext = "Opens at 8:50 AM";
+            buttonSubtext = "Opens at " + ts.getFormattedCheckinStart();
             buttonEnabled = false;
         } else if (canCheckIn) {
             buttonLabel = "Check In";
             buttonColor = "blue";
-            buttonSubtext = "Available 8:50 AM – 9:05 AM";
+            buttonSubtext = ts.isCheckinTimerEnabled() ? ("Available " + ts.getFormattedCheckinWindow()) : "Available Now (Timer Disabled)";
             buttonEnabled = true;
         } else {
             buttonLabel = "Check-in Closed";

@@ -7,7 +7,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -90,6 +89,58 @@ public class ClassDAO {
                     ce.setTeacherCount(rs.getInt("teacher_count"));
                     ce.setBatchCount(rs.getInt("batch_count"));
                     return ce;
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    public ClassEntity getClassByCode(String code) {
+        if (code == null || code.trim().isEmpty()) return null;
+        String sql = "SELECT * FROM classes WHERE UPPER(code) = UPPER(?)";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, code.trim());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    ClassEntity ce = new ClassEntity();
+                    ce.setId(rs.getLong("id"));
+                    ce.setCode(rs.getString("code"));
+                    ce.setName(rs.getString("name"));
+                    ce.setDepartment(rs.getString("department"));
+                    ce.setSemester(rs.getString("semester"));
+                    ce.setActive(rs.getInt("is_active") == 1);
+                    return ce;
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    public BatchEntity getBatchByClassAndCode(Long classId, String batchCode) {
+        if (classId == null || batchCode == null || batchCode.trim().isEmpty()) return null;
+        String sql = "SELECT b.*, c.name as class_name, c.code as class_code FROM batches b " +
+                     "JOIN classes c ON b.class_id = c.id " +
+                     "WHERE b.class_id = ? AND UPPER(b.code) = UPPER(?)";
+        try (Connection conn = DBConnection.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, classId);
+            ps.setString(2, batchCode.trim());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    BatchEntity be = new BatchEntity();
+                    be.setId(rs.getLong("id"));
+                    be.setClassId(rs.getLong("class_id"));
+                    be.setCode(rs.getString("code"));
+                    be.setName(rs.getString("name"));
+                    be.setActive(rs.getInt("is_active") == 1);
+                    be.setClassName(rs.getString("class_name"));
+                    be.setClassCode(rs.getString("class_code"));
+                    return be;
                 }
             }
         } catch (SQLException e) {

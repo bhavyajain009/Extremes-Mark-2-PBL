@@ -7,6 +7,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Extremis - Student Dashboard</title>
     <link rel="stylesheet" href="${pageContext.request.contextPath}/css/style.css">
+    <link rel="icon" type="image/png" href="${pageContext.request.contextPath}/images/logo.png">
+    <link rel="manifest" href="${pageContext.request.contextPath}/manifest.json">
+    <meta name="theme-color" content="#dc2626">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -287,5 +290,14 @@
     <jsp:include page="/WEB-INF/views/includes/nav.jsp"/>
 
 </div>
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('${pageContext.request.contextPath}/sw.js')
+                .then(reg => console.log('Extremis ServiceWorker registered:', reg.scope))
+                .catch(err => console.warn('Extremis ServiceWorker registration failed:', err));
+        });
+    }
+</script>
 </body>
 </html>
