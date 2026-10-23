@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ChevronLeft, ChevronRight, Calendar as CalendarIcon, List } from 'lucide-react';
 import { attendanceService } from '../services/api';
-import { AttendanceReportSummary, CalendarDay } from '../types';
+import type { AttendanceReportSummary, CalendarDay } from '../types';
 
 export const AttendanceReportPage: React.FC = () => {
   const navigate = useNavigate();

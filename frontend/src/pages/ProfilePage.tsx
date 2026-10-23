@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, User as UserIcon, Mail, Hash, BookOpen, Layers, LogOut, GraduationCap, ShieldCheck } from 'lucide-react';
 import { authService } from '../services/api';
-import { User } from '../types';
+import type { User } from '../types';
 
 export const ProfilePage: React.FC = () => {
   const navigate = useNavigate();

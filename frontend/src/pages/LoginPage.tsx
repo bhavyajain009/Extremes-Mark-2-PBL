@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UserCheck, ShieldAlert, Lock, ArrowRight, User, GraduationCap, Shield } from 'lucide-react';
 import { authService } from '../services/api';
-import { Role } from '../types';
+import type { Role } from '../types';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Megaphone, Calendar, Info } from 'lucide-react';
 import { noticeService } from '../services/api';
-import { Notice, NoticeCategory } from '../types';
+import type { Notice, NoticeCategory } from '../types';
 
 export const NotificationsPage: React.FC = () => {
   const navigate = useNavigate();

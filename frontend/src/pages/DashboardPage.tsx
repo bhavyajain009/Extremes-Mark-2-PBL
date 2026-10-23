@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { authService, noticeService } from '../services/api';
 import { useAttendanceWindow } from '../hooks/useAttendanceWindow';
-import { Notice, User } from '../types';
+import type { Notice, User } from '../types';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
